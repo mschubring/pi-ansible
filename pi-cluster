@@ -1,0 +1,104 @@
+#! /bin/bash
+# NOTE: based on https://betterdev.blog/minimal-safe-bash-script-template/
+set -Eeuo pipefail
+trap cleanup SIGINT SIGTERM ERR EXIT
+
+function cleanup() {
+    trap - SIGINT SIGTERM ERR EXIT
+    # script cleanup here
+}
+
+function msg() {
+    echo >&2 -e "${1-}"
+}
+
+function die() {
+    local msg=$1
+    local code=${2-1} # default exit status 1
+    msg "$msg"
+    exit "$code"
+}
+
+# --- custom stuff goes here ---
+INVENTROY_FILE="inventory/pi-cluster.ini"
+
+# COMMAND: upgrade
+function do_upgrade() {
+    ansible all -i ${INVENTROY_FILE} -a "apt update" -b
+    ansible all -i ${INVENTROY_FILE} -a "apt upgrade -y" -b
+    exit
+}
+
+# COMMAND: dist-upgrade
+function do_dist_upgrade() {
+    ansible all -i ${INVENTROY_FILE} -a "apt update" -b
+    ansible all -i ${INVENTROY_FILE} -a "apt dist-upgrade -y" -b
+    exit
+}
+
+# COMMAND: help
+function show_help() {
+cat <<EOF
+Usage: ./$(basename "${BASH_SOURCE[0]}") <COMMAND>
+
+Command will be executet on all hosts in inventory file (${INVENTROY_FILE})
+
+COMMANDS:
+    uptime          - do 'uptime'
+    upgrade         - do 'apt update' and 'apt upgrade'
+    dist-upgrade    - do 'apt update' and 'apt dist-upgrade'
+    reboot          - do 'reboot'
+    shutdown        - do 'shutdown now'
+    help, -h        - print this help
+EOF
+    exit
+}
+
+# COMMAND wrapper function
+function parse_params() {
+    # while :; do
+        case "${1-}" in
+        uptime)
+            ansible all -i ${INVENTROY_FILE} -a "uptime"
+            ;;
+
+        upgrade)
+            do_upgrade
+            ;;
+
+        dist-upgrade)
+            do_dist_upgrade
+            ;;
+
+        reboot)
+            ansible all -i ${INVENTROY_FILE} -a "reboot" -b
+            ;;
+
+        shutdown)
+            ansible all -i ${INVENTROY_FILE} -a "shutdown now" -b
+            ;;
+
+        help | -h)
+            show_help
+            ;;
+
+        -?*)
+            die "Unknown option: $1"
+            ;;
+
+        *)
+            show_help
+            ;;
+        esac
+    #     shift
+    # done
+
+    args=("$@")
+    # check required arguments
+    [[ ${#args[@]} -eq 0 ]] && die "Missing script arguments"
+
+    return 0
+}
+
+# run wrapper parsing
+parse_params "$@"
